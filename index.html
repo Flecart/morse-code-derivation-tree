@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Morse Code Derivation Tree</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            color: #374151;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            padding: 2rem;
+            box-sizing: border-box;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 2.5rem;
+            border-radius: 1rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            max-width: 900px;
+            width: 100%;
+        }
+        .derivation-root {
+            list-style: none;
+            padding-left: 0;
+        }
+        .derivation-node {
+            list-style: none;
+            position: relative;
+        }
+        /* Styles for tree lines */
+        .derivation-node::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 1px;
+            background-color: #d1d5db; /* Light gray line */
+            transform: translateX(-0.5rem); /* Adjust to align with nested ul padding */
+        }
+        .derivation-node:last-child::before {
+            height: 50%; /* Only half height for last child in a branch */
+        }
+        .derivation-node > div::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            height: 1px;
+            width: 0.5rem; /* Horizontal line segment */
+            background-color: #d1d5db;
+            transform: translateX(-0.5rem);
+        }
+        .derivation-node ul {
+            padding-left: 1.5rem; /* Indent for nested lists */
+            list-style: none;
+        }
+        .decoded-word-list li {
+            font-weight: 500;
+        }
+        #derivationTree h3, #decodedWords h3 {
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        #messageBox {
+            display: none; /* Hidden by default */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-start justify-center p-8">
+    <div class="container bg-white p-8 rounded-2xl shadow-xl">
+        <h1 class="text-3xl font-extrabold text-gray-900 mb-6 text-center">Morse Code Derivation Tree</h1>
+
+        <div class="input-section mb-6">
+            <label for="morseInput" class="block text-sm font-medium text-gray-700 mb-2">Enter Morse Code (use '.' and '-'):</label>
+            <input type="text" id="morseInput" class="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition-all" placeholder="e.g., ---.-.--.-.-...-.-....">
+            <button onclick="decodeAndDisplay()" class="mt-4 w-full bg-blue-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-transform transform hover:scale-105 active:scale-95 shadow-md">
+                Decode and Generate Tree
+            </button>
+        </div>
+
+        <div id="messageBox" class="p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg mb-4 hidden" role="alert">
+            <!-- Error messages will be displayed here -->
+        </div>
+
+        <div id="derivationTree" class="mb-8 p-6 bg-gray-50 rounded-lg overflow-x-auto">
+            <!-- Derivation tree will be rendered here -->
+        </div>
+
+        <div id="decodedWords" class="p-6 bg-blue-50 rounded-lg">
+            <!-- All decoded words will be listed here -->
+        </div>
+    </div>
+
+    <script>
+        // Mapping from character to its Morse code representation
+        const charToMorse = {
+            'A': '.-', 'B': '-...', 'C': '-.-.', 'D': '-..', 'E': '.',
+            'F': '..-.', 'G': '--.', 'H': '....', 'I': '..', 'J': '.---',
+            'K': '-.-', 'L': '.-..', 'M': '--', 'N': '-.', 'O': '---',
+            'P': '.--.', 'Q': '--.-', 'R': '.-.', 'S': '...', 'T': '-',
+            'U': '..-', 'V': '...-', 'W': '.--', 'X': '-..-', 'Y': '-.--',
+            'Z': '--..',
+            // Numbers are included for more complete decoding possibilities
+            '0': '-----', '1': '.----', '2': '..---', '3': '...--', '4': '....-',
+            '5': '.....', '6': '-....', '7': '--...', '8': '---..', '9': '----.'
+        };
+
+        // Reverse mapping from Morse code representation to character for quick lookup
+        const morseToChar = {};
+        for (const char in charToMorse) {
+            morseToChar[charToMorse[char]] = char;
+        }
+
+        // Stores all complete decoding paths found. Each path is an array of {morse: string, char: string} objects.
+        let allDecodedPaths = [];
+
+        // Predefined set of common English words (uppercase) for highlighting potential matches
+        const commonEnglishWords = new Set([
+            'HELLO', 'WORLD', 'SOS', 'YES', 'NO', 'HELP', 'THANK', 'GOOD', 'CODE',
+            'TEST', 'MOM', 'DAD', 'HI', 'IT', 'IS', 'WE', 'ARE', 'GO', 'STOP',
+            'COME', 'LOVE', 'SEE', 'ME', 'YOU', 'END', 'RUN', 'WALK', 'TALK',
+            'TIME', 'NICE', 'DAY', 'NIGHT', 'OPEN', 'CLOSE', 'AGAIN', 'SEND',
+            'CALL', 'WAIT', 'OKAY', 'DONE', 'FINISH', 'START', 'READ', 'WRITE',
+            'EAT', 'DRINK', 'SLEEP', 'WAKE', 'FAST', 'SLOW', 'HAPPY', 'SAD',
+            'TRUE', 'FALSE', 'UP', 'DOWN', 'LEFT', 'RIGHT', 'OUT', 'IN', 'ON', 'OFF',
+            'TO', 'FOR', 'AND', 'OR', 'BUT', 'THE', 'A', 'AN', 'I', 'AM', 'MY', 'YOUR'
+        ]);
+
+        /**
+         * Recursive function to explore all possible decodings of a Morse code string.
+         * @param {string} remainingMorse - The part of the Morse code string yet to be decoded.
+         * @param {Array<Object>} currentPath - The sequence of {morse, char} objects decoded so far in the current path.
+         */
+        function recursiveDecode(remainingMorse, currentPath) {
+            // Base case: If no Morse code remains, this path is a complete decoding.
+            if (remainingMorse.length === 0) {
+                allDecodedPaths.push(currentPath);
+                return;
+            }
+
+            // Iterate through all possible prefixes of the remaining Morse code.
+            // Max length of a Morse code character is 5 (e.g., for numbers like '0' or '5').
+            for (let i = 1; i <= Math.min(remainingMorse.length, 5); i++) {
+                const prefix = remainingMorse.substring(0, i);
+
+                // Check if the current prefix is a valid Morse code pattern for a character.
+                if (morseToChar[prefix]) {
+                    const char = morseToChar[prefix]; // Get the decoded character
+                    const newPath = [...currentPath, { morse: prefix, char: char }]; // Extend the current path
+                    const newRemainingMorse = remainingMorse.substring(i); // Get the rest of the Morse code
+
+                    // Recursively call for the new remaining Morse code
+                    recursiveDecode(newRemainingMorse, newPath);
+                }
+            }
+        }
+
+        /**
+         * Initiates the decoding process and updates the display.
+         * Handles input validation and clears previous results.
+         */
+        function decodeAndDisplay() {
+            const morseInput = document.getElementById('morseInput').value.trim();
+            allDecodedPaths = []; // Clear previous decoding results
+            document.getElementById('derivationTree').innerHTML = ''; // Clear previous tree
+            document.getElementById('decodedWords').innerHTML = ''; // Clear previous words
+
+            const messageBox = document.getElementById('messageBox');
+            messageBox.style.display = 'none'; // Hide any previous error messages
+            messageBox.textContent = '';
+
+            // Input validation
+            if (!morseInput) {
+                messageBox.textContent = "Please enter Morse code to decode.";
+                messageBox.style.display = 'block';
+                return;
+            }
+            if (!/^[.\-]+$/.test(morseInput)) {
+                messageBox.textContent = "Invalid Morse code. Please use only '.' and '-'.";
+                messageBox.style.display = 'block';
+                return;
+            }
+
+            // Start the recursive decoding
+            recursiveDecode(morseInput, []);
+
+            // Render the results
+            renderDerivationTree();
+            displayAllDecodedWords();
+        }
+
+        /**
+         * Renders the derivation tree based on all found decoded paths.
+         * It builds a Trie-like structure to group common prefixes for visualization.
+         */
+        function renderDerivationTree() {
+            const treeContainer = document.getElementById('derivationTree');
+            treeContainer.innerHTML = '<h3 class="text-xl font-bold text-gray-800 mb-4">Derivation Tree:</h3>';
+
+            if (allDecodedPaths.length === 0) {
+                treeContainer.innerHTML += '<p class="text-gray-600">No possible decodings found with the standard Morse alphabet for the given input.</p>';
+                return;
+            }
+
+            const rootUl = document.createElement('ul');
+            rootUl.className = 'derivation-root';
+            treeContainer.appendChild(rootUl);
+
+            // Build a Trie data structure from all complete decoding paths.
+            // This allows efficient grouping of common prefixes for tree rendering.
+            const trie = {};
+            allDecodedPaths.forEach(path => {
+                let currentNode = trie;
+                path.forEach((segment, index) => {
+                    // Create a unique key for each node based on its Morse segment and decoded character
+                    const key = `${segment.morse}:${segment.char}`;
+                    if (!currentNode[key]) {
+                        currentNode[key] = { _segment: segment, _children: {} };
+                    }
+                    currentNode = currentNode[key]._children;
+                    // Mark the end of a full decoding path in the trie
+                    if (index === path.length - 1) {
+                        currentNode._isEndOfPath = true;
+                    }
+                });
+            });
+
+            /**
+             * Recursively renders the trie nodes into HTML `<ul>` and `<li>` elements.
+             * @param {Object} node - The current node in the trie.
+             * @param {HTMLElement} parentUl - The `<ul>` element to which children `<li>`s should be appended.
+             */
+            function renderTrieNode(node, parentUl) {
+                // Iterate over all child keys (representing next Morse segments/characters)
+                for (const key in node) {
+                    // Skip internal properties of the trie node
+                    if (key === '_segment' || key === '_children' || key === '_isEndOfPath') continue;
+
+                    const segment = node[key]._segment; // Get the {morse, char} object for this segment
+                    const li = document.createElement('li');
+                    li.className = 'derivation-node relative py-1'; // Tailwind classes for styling
+
+                    // Display the Morse segment and its decoded character
+                    li.innerHTML = `
+                        <div class="flex items-center">
+                            <span class="morse-segment px-2 py-1 bg-blue-100 text-blue-800 rounded-md text-sm font-mono">${segment.morse}</span>
+                            <span class="decoded-char ml-2 px-2 py-1 bg-green-100 text-green-800 rounded-md text-sm font-semibold">${segment.char}</span>
+                        </div>
+                    `;
+                    parentUl.appendChild(li);
+
+                    // If this node has children in the trie (meaning the path continues)
+                    if (Object.keys(node[key]._children).length > 0) {
+                        // Create a new nested unordered list for children
+                        const nextUl = document.createElement('ul');
+                        nextUl.className = 'ml-4'; // Indent for visual hierarchy
+                        li.appendChild(nextUl);
+                        // Recursively render children
+                        renderTrieNode(node[key]._children, nextUl);
+                    } else if (node[key]._children._isEndOfPath) {
+                        // If this is the end of a valid decoding path
+                        li.innerHTML += `<span class="text-xs text-gray-500 italic ml-2">(End of path)</span>`;
+                    }
+                }
+            }
+
+            // Start rendering from the root of the trie
+            renderTrieNode(trie, rootUl);
+        }
+
+        /**
+         * Displays all unique decoded words found and highlights any common English words.
+         */
+        function displayAllDecodedWords() {
+            const decodedWordsContainer = document.getElementById('decodedWords');
+            const uniqueWords = new Set(); // Use a Set to store only unique decoded words
+
+            // Collect all unique decoded words from the paths
+            allDecodedPaths.forEach(path => {
+                uniqueWords.add(path.map(s => s.char).join(''));
+            });
+
+            if (uniqueWords.size > 0) {
+                decodedWordsContainer.innerHTML = '<h3 class="text-xl font-bold text-gray-800 mb-4 mt-6">All Possible Decoded Words:</h3>';
+                const ul = document.createElement('ul');
+                ul.className = 'list-disc list-inside space-y-1 text-gray-700';
+
+                // Sort and display all unique words
+                Array.from(uniqueWords).sort().forEach(word => {
+                    const li = document.createElement('li');
+                    li.textContent = word;
+                    ul.appendChild(li);
+                });
+                decodedWordsContainer.appendChild(ul);
+
+                // Filter for potential English words from the predefined list
+                const foundEnglishWords = Array.from(uniqueWords).filter(word => commonEnglishWords.has(word));
+
+                if (foundEnglishWords.length > 0) {
+                    const englishWordsDiv = document.createElement('div');
+                    englishWordsDiv.className = 'mt-4 p-4 bg-yellow-50 rounded-lg shadow-sm';
+                    englishWordsDiv.innerHTML = '<h4 class="text-lg font-semibold text-yellow-800 mb-2">Potential English Words Found (from common list):</h4>';
+                    const englishUl = document.createElement('ul');
+                    englishUl.className = 'list-disc list-inside space-y-1 text-yellow-700';
+                    foundEnglishWords.sort().forEach(word => {
+                        const li = document.createElement('li');
+                        li.textContent = word;
+                        englishUl.appendChild(li);
+                    });
+                    englishWordsDiv.appendChild(englishUl);
+                    decodedWordsContainer.appendChild(englishWordsDiv);
+                } else {
+                    decodedWordsContainer.innerHTML += '<p class="mt-4 text-gray-600">No common English words found in decodings (based on a small predefined list).</p>';
+                }
+
+            } else {
+                decodedWordsContainer.innerHTML += '<p class="mt-6 text-gray-600">No words decoded from the given input.</p>';
+            }
+        }
+    </script>
+</body>
+</html>
+
